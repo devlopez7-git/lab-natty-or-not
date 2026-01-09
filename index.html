@@ -1,0 +1,160 @@
+function enviarEmails() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("MALA DIRETA DESENVOLVIMENTO"); // Mude o nome da aba se necessário
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+
+  const colTotal = headers.indexOf("TOTAL");
+
+  const projetoCols = headers
+    .map((h, i) => ({ nome: h.toString().trim(), col: i }))
+    .filter(o => o.nome.toUpperCase().startsWith("PROJETO"));
+
+  const LOGO_URL = "";
+  // Substitua pela URL real da sua logo
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const email = row[1];
+    if (!email || email.toString().trim() === "") continue;
+
+    try {
+      const hora = new Date().getHours();
+      const saudacao = hora < 12 ? "Bom dia!" : hora < 18 ? "Boa tarde!" : "Boa noite!";
+      const dataInicio = formatarData(row[3]);
+      const dataFim = formatarData(row[4]);
+      const fornecedor = row[5] || "";
+      const total = moeda(row[colTotal] || 0);
+      const prazoNF = somarDias(row[4], 5);
+
+      let linhasProjetos = "";
+      projetoCols.forEach(p => {
+        const valor = Number(row[p.col]) || 0;
+        if (valor > 0) {
+          const valorFmt = moeda(valor);
+          linhasProjetos += `<tr>
+            <td><strong>${p.nome}</strong></td>
+            <td>R$ ${valorFmt}</td>
+          </tr>\n`;
+        }
+      });
+
+      if (linhasProjetos === "") {
+        linhasProjetos = `<tr>
+          <td colspan="2" style="text-align:center;color:#999;">Nenhum projeto com valor neste período</td>
+        </tr>`;
+      }
+
+      const assunto = `Fechamento financeiro – ${fornecedor} • ${dataInicio} a ${dataFim}`;
+
+      const mensagemHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body { margin:0; padding:12px; font-family:Arial,sans-serif; background:#f5f5f5; }
+          .wrapper { max-width:900px; margin:auto; background:#fff; border:1px solid #ddd; border-radius:6px; overflow:hidden; }
+          .header { background:#111; padding:14px; color:white; text-align:center; }
+          .header-title { font-size:20px; margin-bottom:3px; }
+          .content { padding:16px; }
+          .greeting { font-size:15px; font-weight:bold; margin-bottom:10px; }
+          .intro { color:#444; font-size:13px; line-height:1.3; margin-bottom:12px; }
+          .card { background:#fafafa; border:1px solid #e4e4e4; padding:12px; border-radius:6px; margin-bottom:12px; }
+          table { width:100%; border-collapse:collapse; }
+          table tr { border-bottom:1px solid #ddd; }
+          table td { padding:5px 0; font-size:13px; font-weight:600; }
+          table td:last-child { text-align:right; }
+          .total { text-align:center; padding:12px; border-top:2px solid #eee; border-bottom:2px solid #eee; margin-bottom:12px; }
+          .total-value { background:#0066CC; color:#fff; padding:8px 20px; border-radius:6px; font-size:20px; font-weight:700; display:inline-block; }
+          .alert { border:1px solid #b4d4ff; padding:10px; border-radius:6px; margin:12px 0; font-size:12px; line-height:1.3; background:#f8fbff; }
+          .alert-title { color:#0044aa; font-weight:800; margin-bottom:5px; font-size:13px; }
+          .deadline { border:1px solid #cce5ff; padding:8px; text-align:center; border-radius:5px; margin-bottom:12px; font-size:13px; background:#e6f2ff; }
+          .deadline strong { color:#0044aa; font-weight:800; }
+          .footer { background:#111; color:white; padding:14px; text-align:center; font-size:12px; }
+          .footer-logo { width:100px; margin:4px auto; display:block; }
+        </style>
+      </head>
+      <body>
+        <div class="wrapper">
+          <div class="header">
+            <div class="header-title">Fechamento Financeiro</div>
+            <div style="font-size:13px;">${fornecedor} • ${dataInicio} – ${dataFim}</div>
+          </div>
+          <div class="content">
+            <div class="greeting">${saudacao}</div>
+            <div class="intro">
+              Segue o fechamento financeiro referente aos serviços de <strong>desenvolvimento de software</strong> prestados entre
+              <strong>${dataInicio}</strong> e <strong>${dataFim}</strong>.
+            </div>
+            <div class="card">
+              <table>${linhasProjetos}</table>
+            </div>
+            <div class="total">
+              <div class="total-value">R$ ${total}</div>
+            </div>
+            <div style="font-size:13px; margin-bottom:15px;">
+              Por favor responda este e-mail (a todos) confirmando os valores apresentados.
+            </div>
+            <div class="alert">
+              <div class="alert-title">DADOS PARA EMISSÃO DE NOTA FISCAL</div>
+              <strong>CODEX SOLUÇÕES DIGITAIS LTDA</strong><br>
+              CNPJ: 45.678.901/0001-23<br>
+              Rua Tecnologia, 500 – Sala 12 – Pinheiros<br>
+              São Paulo, SP – CEP: 05410-200
+            </div>
+            <div class="deadline">
+              <strong>ENVIAR NF ATÉ DIA ${prazoNF}</strong>
+            </div>
+          </div>
+          <div class="footer">
+            <div>Obrigado pela parceria e confiança!</div>
+            <img src="${LOGO_URL}" alt="Codex Soluções Digitais" class="footer-logo">
+            <div>Codex Soluções Digitais LTDA<br>São Paulo • Brasil</div>
+          </div>
+        </div>
+      </body>
+      </html>`;
+
+      const pdf = Utilities.newBlob(mensagemHTML, "text/html")
+        .getAs("application/pdf")
+        .setName(`Fechamento-${fornecedor}-${dataInicio}-${dataFim}.pdf`);
+
+      MailApp.sendEmail({
+        to: email,
+        subject: assunto,
+        name: "Codex Soluções Digitais – Financeiro",
+        htmlBody: mensagemHTML,
+        attachments: [pdf]
+      });
+
+      sheet.getRange(i + 1, 3).setValue(new Date()); // Coluna C = data de envio
+      Utilities.sleep(800); // Pausa para não exceder limites
+
+    } catch (e) {
+      Logger.log(`Erro na linha ${i + 1}: ${e.toString()}`);
+    }
+  }
+}
+
+// Funções auxiliares
+function formatarData(v) {
+  if (!v) return "";
+  try {
+    return Utilities.formatDate(new Date(v), "GMT-3", "dd/MM/yyyy");
+  } catch (e) {
+    return "";
+  }
+}
+
+function somarDias(d, dias) {
+  if (!d) return "";
+  const nd = new Date(d);
+  nd.setDate(nd.getDate() + dias);
+  return formatarData(nd);
+}
+
+function moeda(v) {
+  const num = Number(v) || 0;
+  return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
